@@ -5,13 +5,14 @@ from mysql.connector import Error
 import re
 import numpy as np
 import math
+from config import DB_CONFIG
 
 class GarbageTruckImporter:
     
-    def __init__(self, host='localhost', database='test_garbage', 
-                 user='root', password=''):
+    def __init__(self, host='localhost', port = 3036, database='test_garbage', user='root', password=''):
         self.conn = mysql.connector.connect(
             host=host,
+            port = port,
             database=database,
             user=user,
             password=password,
@@ -339,10 +340,11 @@ class GarbageTruckImporter:
 # ========== 使用範例 ==========
 if __name__ == '__main__':
     importer = GarbageTruckImporter(
-        host='localhost',
-        database='test_garbage',
-        user='root',
-        password=''
+        host=DB_CONFIG['host'],
+        port=DB_CONFIG['port'],
+        database=DB_CONFIG['database'],
+        user=DB_CONFIG['user'],
+        password=DB_CONFIG['password']
     )
     
     importer.import_taipei('台北市垃圾車清運點位資訊.csv')
