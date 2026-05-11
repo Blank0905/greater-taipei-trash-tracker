@@ -5,3 +5,6 @@ PyMySQL==1.1.0
 APScheduler==3.10.4
 line-bot-sdk==3.11.0
 python-dotenv==1.0.1
+pandas
+numpy
+mysql-connector-python

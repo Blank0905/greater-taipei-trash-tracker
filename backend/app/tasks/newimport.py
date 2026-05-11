@@ -6,8 +6,10 @@ import re
 import numpy as np
 import math
 import sys
-import time
 import os
+
+# 讓腳本能往上找到 backend/ 目錄裡的 config.py
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 from config import DB_CONFIG
 
 # 設定工作目錄為腳本所在目錄
