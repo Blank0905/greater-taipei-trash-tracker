@@ -5,20 +5,46 @@ from mysql.connector import Error
 import re
 import numpy as np
 import math
+import sys
+import time
+import os
 from config import DB_CONFIG
+
+# 設定工作目錄為腳本所在目錄
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+os.chdir(SCRIPT_DIR)
+print(f"[工作目錄] {os.getcwd()}")
 
 class GarbageTruckImporter:
     
-    def __init__(self, host='localhost', port = 3036, database='test_garbage', user='root', password=''):
-        self.conn = mysql.connector.connect(
-            host=host,
-            port = port,
-            database=database,
-            user=user,
-            password=password,
-            charset='utf8mb4'
-        )
+    def __init__(self, host='localhost', port = 3306, database='test_garbage', user='root', password=''):
+        print(f"[連接中...] 連接到 {host}:{port} database={database}")
+        sys.stdout.flush()
+        
+        try:
+            self.conn = mysql.connector.connect(
+                host=host,
+                port = port,
+                database=database,
+                user=user,
+                password=password,
+                charset='utf8mb4',
+                connection_timeout=60,
+                read_timeout=600,
+                write_timeout=600,
+                autocommit=False
+            )
+            print(f"[✓ 連接成功]")
+            sys.stdout.flush()
+        except Error as e:
+            print(f"[✗ 連接失敗] {e}")
+            sys.stdout.flush()
+            raise
+            
         self.cursor = self.conn.cursor()
+        self.batch_count = 0
+        self.batch_size = 100
+        self.query_count = 0
     
     # ========== 站點名稱清理 ==========
     def _clean_station_name(self, name: str, city: str, district: str) -> str:
@@ -87,12 +113,24 @@ class GarbageTruckImporter:
 
     # ========== 台北市 ==========
     def import_taipei(self, csv_path: str):
+        print(f"\n[台北市] 開始匯入 {csv_path}")
+        sys.stdout.flush()
+        
         df = pd.read_csv(csv_path, dtype=str)
         df = df.replace({np.nan: None})
+        print(f"[台北市] 讀取 {len(df)} 筆記錄")
+        sys.stdout.flush()
         
         route_groups = df.groupby(['局編', '車次', '路線', '分隊', '車號', '行政區'])
+        total_routes = len(route_groups)
+        print(f"[台北市] 分組為 {total_routes} 條路線")
+        sys.stdout.flush()
         
+        route_idx = 0
         for (route_code, trip, route_name, team, car_num, district), group in route_groups:
+            route_idx += 1
+            print(f"[台北市 {route_idx}/{total_routes}] 路線: {route_name} ({len(group)} 站點)", end='\r')
+            sys.stdout.flush()
             # routes → 區層級（village=None）
             route_area_id = self._get_or_create_area('台北市', district, None)
             route_id = self._insert_route(
@@ -121,9 +159,15 @@ class GarbageTruckImporter:
                 )
                 
                 self._insert_taipei_schedule(station_id)
+                
+                self.batch_count += 1
+                if self.batch_count % self.batch_size == 0:
+                    self.conn.commit()
+                    print(f"  [✓ 已提交 {self.batch_count} 筆操作]", end='\r')
+                    sys.stdout.flush()
         
         self.conn.commit()
-        print("台北市：匯入完成")
+        print(f"\n[台北市] ✓ 匯入完成 (共 {self.batch_count} 筆操作)")
     
     def _insert_taipei_schedule(self, station_id: int):
         for day in [2, 4, 6]:
@@ -133,12 +177,26 @@ class GarbageTruckImporter:
     
     # ========== 新北市 ==========
     def import_new_taipei(self, csv_path: str):
+        print(f"\n[新北市] 開始匯入 {csv_path}")
+        sys.stdout.flush()
+        
         df = pd.read_csv(csv_path, dtype=str)
         df = df.replace({np.nan: None})
+        print(f"[新北市] 讀取 {len(df)} 筆記錄")
+        sys.stdout.flush()
         
         route_groups = df.groupby(['lineid', 'linename', 'city'])
+        total_routes = len(route_groups)
+        print(f"[新北市] 分組為 {total_routes} 條路線")
+        sys.stdout.flush()
+        
+        route_idx = 0
+        batch_start = self.batch_count
         
         for (line_id, line_name, district), group in route_groups:
+            route_idx += 1
+            print(f"[新北市 {route_idx}/{total_routes}] 路線: {line_name} ({len(group)} 站點)", end='\r')
+            sys.stdout.flush()
             route_area_id = self._get_or_create_area('新北市', district, None)
             route_id = self._insert_route(
                 areas_id=route_area_id,
@@ -163,9 +221,13 @@ class GarbageTruckImporter:
                 )
                 
                 self._insert_new_taipei_schedule(station_id, row)
+                
+                self.batch_count += 1
+                if self.batch_count % self.batch_size == 0:
+                    self.conn.commit()
         
         self.conn.commit()
-        print("新北市：匯入完成")
+        print(f"\n[新北市] ✓ 匯入完成 (新增 {self.batch_count - batch_start} 筆操作)")
     
     def _insert_new_taipei_schedule(self, station_id: int, row):
         days = ['sunday', 'monday', 'tuesday', 'wednesday', 
@@ -181,12 +243,26 @@ class GarbageTruckImporter:
     
     # ========== 基隆市 ==========
     def import_keelung(self, csv_path: str):
+        print(f"\n[基隆市] 開始匯入 {csv_path}")
+        sys.stdout.flush()
+        
         df = pd.read_csv(csv_path, dtype=str)
         df = df.replace({np.nan: None})
+        print(f"[基隆市] 讀取 {len(df)} 筆記錄")
+        sys.stdout.flush()
         
         route_groups = df.groupby(['編號', '清運路線名稱', '班別'])
+        total_routes = len(route_groups)
+        print(f"[基隆市] 分組為 {total_routes} 條路線")
+        sys.stdout.flush()
+        
+        route_idx = 0
+        batch_start = self.batch_count
         
         for (route_code, route_name, team), group in route_groups:
+            route_idx += 1
+            print(f"[基隆市 {route_idx}/{total_routes}] 路線: {route_name} ({len(group)} 站點)", end='\r')
+            sys.stdout.flush()
             district = self._extract_keelung_district(route_name)
             
             route_area_id = self._get_or_create_area('基隆市', district, None)
@@ -217,9 +293,13 @@ class GarbageTruckImporter:
                 )
                 
                 self._insert_keelung_schedule(station_id, row.get('回收日(星期幾)', ''))
+                
+                self.batch_count += 1
+                if self.batch_count % self.batch_size == 0:
+                    self.conn.commit()
         
         self.conn.commit()
-        print("基隆市：匯入完成")
+        print(f"\n[基隆市] ✓ 匯入完成 (新增 {self.batch_count - batch_start} 筆操作)")
     
     def _extract_keelung_district(self, route_name: str) -> str:
         match = re.search(r'(暖暖區|中正區|信義區|仁愛區|中山區|安樂區|七堵區)', route_name)
@@ -339,16 +419,40 @@ class GarbageTruckImporter:
 
 # ========== 使用範例 ==========
 if __name__ == '__main__':
-    importer = GarbageTruckImporter(
-        host=DB_CONFIG['host'],
-        port=DB_CONFIG['port'],
-        database=DB_CONFIG['database'],
-        user=DB_CONFIG['user'],
-        password=DB_CONFIG['password']
-    )
+    print("="*60)
+    print("垃圾車資料匯入系統 - 開始")
+    print("="*60)
+    sys.stdout.flush()
     
-    importer.import_taipei('台北市垃圾車清運點位資訊.csv')
-    importer.import_new_taipei('新北市垃圾車路線.csv')
-    importer.import_keelung('route_klepb.csv')
+    try:
+        importer = GarbageTruckImporter(
+            host=DB_CONFIG['host'],
+            port=DB_CONFIG['port'],
+            database=DB_CONFIG['database'],
+            user=DB_CONFIG['user'],
+            password=DB_CONFIG['password']
+        )
+        
+        print("\n開始匯入各市資料...\n")
+        sys.stdout.flush()
+        
+        importer.import_taipei('台北市垃圾車清運點位資訊.csv')
+        importer.import_new_taipei('新北市垃圾車路線.csv')
+        importer.import_keelung('route_klepb.csv')
+        
+        print("\n" + "="*60)
+        print("✓ 全部匯入完成！")
+        print("="*60)
+        sys.stdout.flush()
+        
+    except Exception as e:
+        print(f"\n✗ 錯誤: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.stdout.flush()
     
-    importer.close()
+    finally:
+        try:
+            importer.close()
+        except:
+            pass
