@@ -16,6 +16,8 @@ def create_app(config_class=Config):
     def health_check():
         return {'status': 'ok', 'message': 'Flask is running!'}
 
-    # TODO: 這裡未來會載入並註冊 API 路由 (Blueprint)
+    # 註冊 API 路由 (Blueprint)
+    from app.api.routes import bp as stations_bp
+    app.register_blueprint(stations_bp)
 
     return app
