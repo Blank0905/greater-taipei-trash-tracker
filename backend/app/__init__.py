@@ -1,16 +1,13 @@
 from flask import Flask
-from flask_sqlalchemy import SQLAlchemy
+from flask_cors import CORS
 from config import Config
-
-# 初始化全域的資料庫實例
-db = SQLAlchemy()
 
 def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
-
-    # 綁定資料庫到這個 Flask App
-    db.init_app(app)
+    
+    # 允許跨來源請求 (前端 React 會用到)
+    CORS(app)
 
     @app.route('/health')
     def health_check():

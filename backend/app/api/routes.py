@@ -1,26 +1,67 @@
-from flask import Blueprint, jsonify
-from app.models import Station
+from flask import Blueprint, jsonify, request
+from app.db import get_db_connection
 
-# 1. 建立 Blueprint (藍圖)：把它當作是「API 群組」，把相關的 API 打包在一起。
-# 這裡設定網址前綴為 /api/stations
 bp = Blueprint('stations', __name__, url_prefix='/api/stations')
 
 @bp.route('/', methods=['GET'])
 def get_all_stations():
-    # 2. 透過 SQLAlchemy 去資料庫撈資料 (先示範抓前 10 筆避免太慢)
-    stations = Station.query.limit(10).all()
-    
-    # 3. 資料庫拿出來的是 Python 物件，前端看不懂，必須手動轉成 JSON 字典
-    result = []
-    for s in stations:
-        result.append({
-            'station_id': s.station_id,
-            'station_name': s.station_name,
-            # Decimal 和 Time 型態無法直接轉 JSON，需要轉成 float 或 string
-            'latitude': float(s.latitude) if s.latitude else None,
-            'longitude': float(s.longitude) if s.longitude else None,
-            'arrive_time': str(s.arrive_time) if s.arrive_time else None
-        })
-        
-    # 4. 回傳 JSON 格式給前端
-    return jsonify({'status': 'success', 'data': result})
+    """範例：取得前 10 筆站點"""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            sql = "SELECT station_id, station_name, latitude, longitude, arrive_time FROM stations LIMIT 10"
+            cursor.execute(sql)
+            stations = cursor.fetchall()
+            
+            for s in stations:
+                if s['arrive_time']:
+                    s['arrive_time'] = str(s['arrive_time'])
+                    
+            return jsonify({'status': 'success', 'data': stations})
+    finally:
+        conn.close()
+
+@bp.route('/search', methods=['GET'])
+def search_nearby():
+    """
+    進階範例：給定經緯度算距離，並找出附近 2 公里內的站點
+    參數: lat, lng, radius (預設 2km)
+    """
+    lat = request.args.get('lat', type=float)
+    lng = request.args.get('lng', type=float)
+    radius = request.args.get('radius', type=float, default=2.0)
+
+    if lat is None or lng is None:
+        return jsonify({'status': 'error', 'message': 'Missing lat or lng'}), 400
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            # 這是專業的 Haversine 距離計算 SQL
+            # 6371 是地球半徑 (公里)
+            sql = """
+                SELECT *, (
+                    6371 * acos (
+                        cos ( radians(%s) )
+                        * cos( radians( latitude ) )
+                        * cos( radians( longitude ) - radians(%s) )
+                        + sin ( radians(%s) )
+                        * sin( radians( latitude ) )
+                    )
+                ) AS distance
+                FROM stations
+                HAVING distance < %s
+                ORDER BY distance ASC
+                LIMIT 20
+            """
+            cursor.execute(sql, (lat, lng, lat, radius))
+            results = cursor.fetchall()
+
+            for r in results:
+                if r['arrive_time']: r['arrive_time'] = str(r['arrive_time'])
+                if r['leave_time']: r['leave_time'] = str(r['leave_time'])
+                r['distance'] = round(float(r['distance']), 3) # 轉成公里並取到小數三位
+
+            return jsonify({'status': 'success', 'count': len(results), 'data': results})
+    finally:
+        conn.close()
