@@ -1,5 +1,5 @@
 import os
-
+#記得把檔名改成config.py
 # 保留給舊的 ETL 腳本 (newimport.py) 使用
 DB_CONFIG = {
     'host': 'localhost',
@@ -17,6 +17,7 @@ class Config:
     # 關閉不必要的追蹤以節省記憶體
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
-    # LINE Bot 的金鑰 (未來會用到)
-    LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET') or 'YOUR_LINE_CHANNEL_SECRET'
-    LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN') or 'YOUR_LINE_CHANNEL_ACCESS_TOKEN'
+    # LINE Bot 的金鑰
+    LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET') or 'LINE_CHANNEL_SECRET'
+    LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN') or 'LINE_CHANNEL_ACCESS_TOKEN'
+    LINE_LIFF_ID = os.environ.get('LINE_LIFF_ID') or 'LINE_LIFF_ID'
