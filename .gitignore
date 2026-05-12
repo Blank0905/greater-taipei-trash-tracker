@@ -217,9 +217,7 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-#*.sql
-#*.csv
+#神神的
 *.docx
 資料庫正規化與系統開發規劃.md
 ARCHITECTURE.md
-config.py
