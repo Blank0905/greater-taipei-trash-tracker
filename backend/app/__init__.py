@@ -15,6 +15,10 @@ def create_app(config_class=Config):
 
     # 註冊 API 路由 (Blueprint)
     from app.api.routes import bp as stations_bp
+    from app.api.webhooks import bp as line_bp
+    from app.api.users import bp as users_bp
     app.register_blueprint(stations_bp)
+    app.register_blueprint(line_bp)
+    app.register_blueprint(users_bp)
 
     return app
