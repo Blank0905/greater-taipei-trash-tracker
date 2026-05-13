@@ -1,50 +1,39 @@
-# 後端系統架構與檔案功能說明 (Backend Architecture)
+# 後端系統架構說明 (Backend Architecture - Updated)
 
-## 根目錄設定檔
-*   **`config.py`**: 後端環境變數與全域設定檔。儲存如 MySQL 資料庫連線字串 (URI)、LINE Channel Secret、LINE Access Token 等機密資訊與不同環境 (開發、正式) 的配置。
-*   **`requirements.txt`**: Python 套件相依清單。列出專案執行需要安裝的套件 (如 Flask, SQLAlchemy, APScheduler, requests 等)，方便部署與環境重建。
-*   **`run.py`**: 整個 Flask 應用的唯一啟動點。負責呼叫 `app/__init__.py` 中的工廠函式建立應用實例，並啟動開發伺服器。
+本系統採用 **Flask** 作為核心框架，並透過 **Blueprint** 實現模組化設計。為了追求更高的執行效率與簡潔性，後端移除了 SQLAlchemy ORM，改採直接透過 **PyMySQL** 執行 SQL 指令的方式進行資料操作。
 
-## `app/` 核心應用目錄
-*   **`__init__.py`**: Flask 工廠函式 (`create_app`) 所在位置。負責初始化 Flask 實例、載入設定、初始化擴充套件 (如資料庫 ORM、CORS)，並註冊各個 API 路由。
+## 核心元件與目錄結構
 
----
+### 1. 資料庫管理層 (`app/db.py`)
+這是目前系統與資料庫溝通的核心。
+*   **Connection Pooling**: 使用 `dbutils.pooled_db` 實作 `PooledDB` 連線池，有效管理資料庫連線，提升高併發環境下的效能。
+*   **Direct SQL**: 提供 `get_db_connection()` 工具函式，讓各個層級能快速取得連線並執行原始 SQL 指令。
 
-### 1. `app/models/` (資料庫模型層)
-負責使用 SQLAlchemy ORM 定義資料庫表格的 Schema。這裡的檔案只做資料結構對應，不寫商業邏輯。
-*   **`__init__.py`**: 模組宣告檔。
-*   **`user.py`**: 定義使用者相關表格。包含 `users` (使用者主檔)、`favorites` (常用定點收藏)、`notifications` (預警推播設定) 等。
-*   **`station.py`**: 定義空間與基礎設施表格。包含 `cities` (縣市)、`districts` (行政區)、`routes` (清運路線)、`stations` (實體停靠站點)。
-*   **`schedule.py`**: 定義動態與時刻列表格。包含 `station_schedules` (站點收運日程) 及 `truck_locations` (高頻即時車輛動態)。
+### 2. API 路由層 (`app/api/`)
+使用 Flask Blueprint 將功能模組化，並定義不同的 URL 前綴：
+*   **`routes.py` (Stations API)**: 處理垃圾車與站點相關查詢。例如，直接在 SQL 中利用 **Haversine 演算法** 實作地理空間檢索（找尋附近站點）。
+*   **`users.py` (Users API)**: 處理使用者註冊與帳號管理。整合了 **LINE LIFF** 的流程，允許使用者透過 LINE 介面註冊並將 LINE ID 與系統帳號綁定。
+*   **`webhooks.py` (LINE Webhook API)**: 專門接收來自 LINE Platform 的 Webhook 事件，作為與使用者即時互動的入口。
 
----
+### 3. 業務邏輯服務層 (`app/services/`)
+封裝複雜的運算與外部 API 整合邏輯，確保 Controller (API) 層保持輕量：
+*   **`geo_service.py`**: 提供地理空間計算、範圍過濾等邏輯。
+*   **`line_service.py`**: 封裝與 LINE Messaging API 的溝通細節（如發送訊息、處理 Account Link 等）。
 
-### 2. `app/api/` (路由層 / Controllers)
-負責接收 HTTP 請求、驗證輸入參數，將任務交給 Services 處理後回傳 JSON。**服務生角色，不負責煮菜**。
-*   **`__init__.py`**: 模組宣告檔。
-*   **`routes.py`**: 處理垃圾車核心業務 API。例如：取得附近站點、搜尋特定路線、查詢垃圾車即時動態。
-*   **`users.py`**: 處理使用者帳號 API。例如：使用者登入/註冊、CRUD 常用定點與推播偏好設定。
-*   **`webhooks.py`**: 專門接收外部服務的事件推播。最主要用於接收 LINE Platform 發送的 Webhook 事件 (如使用者傳送文字、加入好友)。
+### 4. 背景任務層 (`app/tasks/`)
+利用 `APScheduler` 執行非同步的週期性作業，避免阻塞 API 請求：
+*   **`data_sync.py`**: 定期從政府 Open Data 抓取最新資料並同步至資料庫。
+*   **`notifier.py`**: 監控垃圾車位置變化，當滿足特定條件時，主動透過 LINE 發送通知給使用者。
+*   **`newimport.py`**: 處理特定的資料匯入邏輯。
 
----
+### 5. 工具與配置層
+*   **`app/utils/`**: 提供系統通用的輔助函式（如 Error Handling, Formatters）。
+*   **`config.py`**: 集中管理環境變數（資料庫憑證、LINE API Token、LIFF ID 等）。
 
-### 3. `app/services/` (商業邏輯層)
-負責處理核心運算與跨模組邏輯，讓 Controller 保持輕量。**大腦與廚師角色**。
-*   **`__init__.py`**: 模組宣告檔。
-*   **`geo_service.py`**: 封裝所有與空間運算有關的邏輯。包含計算 Bounding Box 邊界框、透過 Haversine 演算法計算經緯度距離與過濾鄰近站點。
-*   **`line_service.py`**: 封裝所有呼叫 LINE API 的邏輯。包含組裝推播訊息格式、處理使用者綁定 (Account Link) 以及向外發送 API 請求。
-
----
-
-### 4. `app/tasks/` (背景排程層)
-透過排程器 (如 APScheduler) 獨立於 HTTP 請求之外執行的定時自動化任務。
-*   **`__init__.py`**: 模組宣告檔。
-*   **`data_sync.py`**: 負責資料同步作業。例如每 2 分鐘拉取新北市 Open Data 即時動態，清洗後更新寫入資料庫的 `truck_locations` 表格。
-*   **`notifier.py`**: 時空判定與預警推播引擎。定時掃描資料庫中的即時車輛位置與使用者設定，判斷是否達到「快到站」條件，若是則觸發推播。
-
----
-
-### 5. `app/utils/` (共用工具層)
-全域共用的基礎功能函式庫 (打雜用)。
-*   **`__init__.py`**: 模組宣告檔。
-*   **`helpers.py`**: 提供雜項工具。例如：時間格式轉換、全域的例外錯誤處理器 (Error Handler)、或是用來驗證資料格式的輔助函式。
+## 技術棧 (Tech Stack)
+*   **Language**: Python 3.x
+*   **Framework**: Flask
+*   **Database**: MySQL (透過 `PyMySQL` 連線)
+*   **Connection Pool**: `DBUtils`
+*   **Task Scheduler**: `APScheduler`
+*   **Integration**: LINE Messaging API, LINE LIFF
